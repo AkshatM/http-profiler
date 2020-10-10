@@ -1,10 +1,12 @@
 use regex::Regex;
+use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
 use std::net::TcpStream;
 use std::process;
 use openssl::ssl::{SslMethod, SslConnector, SslStream};
 use std::io::{Read, Write};
+use itertools::Itertools;
 use std::time::{Duration, Instant};
 use url::Url;
 
@@ -78,7 +80,11 @@ impl Profiler<'_> {
         // loop myself.
         for address in socket_addresses.iter() {
             match TcpStream::connect_timeout(&address, Duration::new(5, 0)) {
-                Ok(connection) => return Ok(connection),
+                Ok(connection) => {
+                    connection.set_read_timeout(Some(Duration::new(3, 0)))?;
+                    connection.set_write_timeout(Some(Duration::new(3, 0)))?;
+                    return Ok(connection);
+                }
                 Err(e) => {
                     println!("Error connecting to {}: {}", &address, e);
                     continue;
@@ -90,24 +96,16 @@ impl Profiler<'_> {
     }
 
     fn create_ssl_connection(&self) -> Result<SslStream<TcpStream>, Box<dyn Error>> {
-        let connector = match SslConnector::builder(SslMethod::tls()) {
-            Ok(value) => value.build(),
-            Err(e) => {
-                println!("Could not instantiate SSL utilities, exiting: {:?}", e);
-                process::exit(1)
-            }
-        };
-
+        let connector = SslConnector::builder(SslMethod::tls())?.build();
         let stream = self.create_regular_connection()?;
         let host = self.target.host_str().unwrap();
         return Ok(connector.connect(host, stream)?);
     }
 
-    fn gather_http_site_statistics(&mut self) {
+    fn gather_http_site_statistics(&mut self) -> Result<(), Box<dyn Error>> {
 
         for _ in 0..self.number_of_requests {
-            let mut connection = self.create_regular_connection().unwrap();
-
+            let mut connection = self.create_regular_connection()?;
             match self.fetch(&mut connection, &self.formatted_request) {
                 Ok(statistic) => {
                     self.successful_responses.push(statistic);
@@ -117,13 +115,14 @@ impl Profiler<'_> {
                 }
             }
         }
+
+        return Ok(());
     }    
 
-    fn gather_https_site_statistics(&mut self) {
+    fn gather_https_site_statistics(&mut self) -> Result<(), Box<dyn Error>> {
 
         for _ in 0..self.number_of_requests {
-            let mut connection = self.create_ssl_connection().unwrap();
-
+            let mut connection = self.create_ssl_connection()?;
             match self.fetch(&mut connection, &self.formatted_request) {
                 Ok(statistic) => {
                     self.successful_responses.push(statistic);
@@ -133,16 +132,93 @@ impl Profiler<'_> {
                 }
             }
         }
+
+        return Ok(());
     }
 
     pub fn profile(&mut self) {
         if self.target.scheme() == "https" {
-            self.gather_https_site_statistics();
+            if let Err(x) = self.gather_https_site_statistics() {
+                println!("Encountered unfixable error creating HTTPS connection: {:?}", x);
+                process::exit(1);
+            };
         } else {
-            self.gather_http_site_statistics();
+            if let Err(y) = self.gather_http_site_statistics() {
+                println!("Encountered unfixable error creating HTTP connection: {:?}", y);
+                process::exit(1);
+            };
         }
     }
 
+    pub fn publish(&self) {
+        let total_requests = self.successful_responses.len() + self.failed_responses.len();
+        let percentage_succeeded = self.successful_responses.len() as f64 / total_requests as f64;
+
+        let unsuccessful_status_codes:Vec<i32> = self.successful_responses.iter()
+            .filter(|&i| i.status_code != 200).map(|i| i.status_code).collect();
+
+        let durations:Vec<Duration> = self.successful_responses.iter().map(|i| i.time_taken).collect();
+        let mean = durations.iter().sum::<Duration>().checked_div(durations.len() as u32);
+        let sorted_durations = durations.iter().cloned().sorted().collect::<Vec<Duration>>();
+
+        let sizes:Vec<usize> = self.successful_responses.iter().map(|i| i.document.len()).collect();
+
+        match self.successful_responses.iter().max_by_key(|i| i.document.len()) {
+            Some(response) =>  print!("The following is the longest raw response body we received, which we take as representative:\n\n{:#?}\n\n", response.document),
+            None => println!("Could not display representative response body (no successful responses)")
+        };
+
+        println!("Number of requests: {}", total_requests);
+        println!(
+            "Percentage succeeded connecting: {}%",
+            percentage_succeeded * 100 as f64
+        );
+        println!(
+            "Percentage of successful responses with non-200 response codes (includes redirects, etc.): {}%",
+            ((unsuccessful_status_codes.len() as f64) / (self.successful_responses.len() as f64)) * (100 as f64)
+        );
+
+        println!("Unique non-200 error codes encountered: {:#?}", unsuccessful_status_codes.iter().cloned().collect::<HashSet<i32>>());
+        match durations.iter().min() {
+            Some(interval) => println!("Fastest response time: {:?}", interval),
+            None => println!("No fastest response time recorded (no successful responses)")
+        }
+        match mean {
+            Some(interval) => println!("Mean response time: {:?}", interval),
+            None => println!("No mean response time recorded (no successful responses)")
+        }
+
+        match sorted_durations.len() {
+            0 => println!("No mean response time recorded (no successful responses)"),
+            1 => println!("Median response time: {:?}", sorted_durations[0]),
+            x => {
+                let median;
+                if x % 2 == 0 {
+                    median = sorted_durations[x / 2];
+                } else {
+                    median = (sorted_durations[x / 2] + sorted_durations[(x + 1) / 2]).checked_div(2).unwrap();
+                }
+                println!("Median response time: {:?}", median);
+            }
+        }
+
+        match durations.iter().max() {
+            Some(interval) => println!("Slowest response time: {:?}", interval),
+            None => println!("No slowest response time recorded (no successful responses)")
+        }
+
+        match sizes.iter().min() {
+            Some(size) => println!("Smallest size: {:?} B", size),
+            None => println!("No smallest size recorded (no successful responses)")
+        }
+        match sizes.iter().max() {
+            Some(size) => println!("Largest size: {:?} B", size),
+            None => println!("No largest size recorded (no successful responses)")
+        }
+
+        println!("Connection errors encountered, if any: {:?}", self.failed_responses);
+
+    }
 }
 
 fn parse_status_code_and_page(source: &Vec<u8>) -> (i32, String) {
@@ -159,7 +235,8 @@ fn parse_status_code_and_page(source: &Vec<u8>) -> (i32, String) {
         None => 0,
     };
 
-    return (status_code, text.to_string());
+    let content = text.splitn(2, "\r\n\r\n").last().unwrap();
+    return (status_code, content.to_string());
 }
 
 fn get_formatted_request(target: &Url) -> String {

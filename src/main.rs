@@ -13,7 +13,7 @@ fn main() {
         (version: "0.1")
         (author: "Akshat Mahajan <akshatm.bkk@gmail.com>")
         (about: "Profile website latency.")
-        (@arg URL: -u --url +takes_value +required "Value of URL to profile")
+        (@arg URL: -u --url +takes_value +required "Value of URL to profile (defaults to 1 if omitted)")
         (@arg PROFILE: -p --profile +takes_value "Number of requests to make")
     )
     .get_matches();
@@ -45,43 +45,6 @@ fn main() {
 
     let mut profiler = Profiler::new(&target, number_of_requests);
     profiler.profile();
+    profiler.publish();
 
 }
-
-/*fn publish_statistics() {
-    let total_requests = successful.len() + failed.len();
-    let percentage_succeeded = successful.len() as f64 / total_requests as f64;
-
-    println!("Number of requests: {}", total_requests);
-    println!(
-        "Percentage succeeded connecting: {}%",
-        percentage_succeeded * 100 as f64
-    );
-
-    let mut times = Vec::new();
-    let mut sizes = Vec::new();
-    for request in successful.iter() {
-        times.push(&request.time_taken);
-        sizes.push(&request.size);
-    }
-
-    match times.iter().cloned().min() {
-        Some(min) => println!("Fastest time: {:?}", min),
-        None => println!("No fastest time (no successful response was returned)"),
-    }
-
-    match times.iter().cloned().max() {
-        Some(max) => println!("Slowest time: {:?}", max),
-        None => println!("No slowest time (no successful response was returned)"),
-    }
-
-    match sizes.iter().cloned().min() {
-        Some(min) => println!("Smallest byte size: {:?} B", min),
-        None => println!("No min. byte size data (no successful response was returned)"),
-    }
-
-    match sizes.iter().cloned().max() {
-        Some(max) => println!("Largest byte size: {:?} B", max),
-        None => println!("No max. byte size data (no successful response was returned)"),
-    }
-}*/
