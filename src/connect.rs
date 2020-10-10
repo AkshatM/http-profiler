@@ -136,6 +136,7 @@ impl Profiler<'_> {
         return Ok(());
     }
 
+    /* Main entrypoint to `Profiler` */
     pub fn profile(&mut self) {
         if self.target.scheme() == "https" {
             if let Err(x) = self.gather_https_site_statistics() {
@@ -150,6 +151,7 @@ impl Profiler<'_> {
         }
     }
 
+    /* Prints request statistics out to terminal */
     pub fn publish(&self) {
         let total_requests = self.successful_responses.len() + self.failed_responses.len();
         let percentage_succeeded = self.successful_responses.len() as f64 / total_requests as f64;
@@ -221,6 +223,7 @@ impl Profiler<'_> {
     }
 }
 
+/* Returns status code and just the response body for our perusal */
 fn parse_status_code_and_page(source: &Vec<u8>) -> (i32, String) {
     let text = String::from_utf8_lossy(source);
 
@@ -228,6 +231,8 @@ fn parse_status_code_and_page(source: &Vec<u8>) -> (i32, String) {
         return (0, text.to_string());
     }
 
+    // extract the status code using a regex - this is okay since I 
+    // don't want to capture the response headers anyway.
     let re = Regex::new(r"^HTTP/1.1 (?P<status_code>.*?) ").unwrap();
     let captures = re.captures(&text).unwrap();
     let status_code: i32 = match captures.name("status_code") {
@@ -235,7 +240,10 @@ fn parse_status_code_and_page(source: &Vec<u8>) -> (i32, String) {
         None => 0,
     };
 
+    // omit response headers from returned content - split at the first sequence
+    // of two CRLFs together.
     let content = text.splitn(2, "\r\n\r\n").last().unwrap();
+
     return (status_code, content.to_string());
 }
 
