@@ -1,6 +1,8 @@
 # About
 
-This is my submission for the systems engineering take-home assessment. I wrote this in Rust, embedding my own Layer 7 HTTP client on top of the Layer 4 sockets wrappers provided by Rust's `std::net`. As a small bonus, I also decided to support HTTPS URLs using `openssl`!
+This is my submission for the [systems engineering take-home assessment at Cloudflare](https://github.com/cloudflare-hiring/cloudflare-2020-systems-engineering-assignment). I wrote this in Rust, embedding my own Layer 7 HTTP client on top of the Layer 4 sockets wrappers provided by Rust's `std::net`. As a small bonus, I also decided to support HTTPS URLs using `openssl`!
+
+Why am I open-sourcing it? It's good solid work I'm proud of, and Cloudflare neither got back to me in their own specified three-week time frame or responded to my numerous followups. It's safe to say I'm probably out of the running, but who cares? [Good engineering is its own reward](https://xkcd.com/1270/). 
 
 I am a novice at Rust - though it is not my first brush with the language, this remains my biggest project in it. Therefore, there are likely places where I deviate from idiomatic Rust code or ignore details about runtime memory efficiency. I've optimized for modularity and safety primarily, making sure unwrapped errors don't bubble up without being caught and handled. (I would ordinarily have used Go, but I hope this shows I'm willing to pick things up quickly in a pinch!)
 
